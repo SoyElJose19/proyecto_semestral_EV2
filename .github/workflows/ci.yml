@@ -1,0 +1,67 @@
+name: Deploy Multi-Services to AWS
+
+# Trigger exclusivo para la rama deploy (Requisito IE4)
+on:
+  push:
+    branches:
+      - deploy
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v3
+
+      - name: Login en Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Construcción y publicación de las 3 imágenes
+      - name: Build & Push Frontend
+        uses: docker/build-push-action@v3
+        with:
+          context: ./front_despacho
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/front-despacho:latest
+
+      - name: Build & Push Ventas
+        uses: docker/build-push-action@v3
+        with:
+          context: ./back-Ventas_SpringBoot/Springboot-API-REST
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/api-ventas:latest
+
+      - name: Build & Push Despachos
+        uses: docker/build-push-action@v3
+        with:
+          context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/api-despachos:latest
+
+  deploy-to-ec2:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v3
+
+      - name: Despliegue por SSH en AWS
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Entrar a la carpeta del proyecto (ajustar si es necesario)
+            cd ~/proyecto_semestral
+            # Descargar lo último de la rama deploy
+            git pull origin deploy
+            # Detener contenedores viejos
+            docker-compose down
+            # Limpiar imágenes viejas para ahorrar espacio en la EC2
+            docker image prune -a -f
+            # Levantar todo el stack con las nuevas imágenes
+            docker-compose up -d
