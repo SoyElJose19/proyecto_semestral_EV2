@@ -1,39 +1,33 @@
 variable "aws_region" {
-  description = "Region AWS"
-  default     = "us-east-1"
+  default = "us-east-1"
+}
+
+variable "aws_account_id" {
+  description = "AWS Account ID"
+  default     = "123456789012"  # ← Cambiar por el real
 }
 
 variable "project_name" {
-  description = "Nombre del proyecto"
-  default     = "proyecto-semestral"
+  default = "devops"
 }
 
 variable "vpc_cidr" {
-  description = "CIDR de la VPC"
-  default     = "10.0.0.0/16"
+  default = "10.0.0.0/16"
 }
 
 variable "subnet_publica_cidr" {
-  description = "CIDR subred publica"
-  default     = "10.0.1.0/24"
+  default = "10.0.1.0/24"
 }
 
-variable "subnet_privada_cidr" {
-  description = "CIDR subred privada"
-  default     = "10.0.2.0/24"
+variable "db_name" {
+  default = "despachos_ventas_db"
 }
 
-variable "ami_id" {
-  description = "AMI Ubuntu 22.04"
-  default     = "ami-0c7217cdde317cfec"
+variable "db_username" {
+  default = "admin"
 }
 
-variable "instance_type" {
-  description = "Tipo de instancia"
-  default     = "t2.micro"
-}
-
-variable "key_name" {
-  description = "Key Pair SSH"
-  default     = "vockey"
+variable "db_password" {
+  default     = "SecurePassword123!"
+  sensitive   = true
 }
