@@ -1,0 +1,87 @@
+name: CD - Despliegue Continuo
+
+on:
+  push:
+    branches: [deploy]
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔄 Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Configurar AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🔐 Login a ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Backend Despachos
+      - name: 🐳 Build & Push Backend Despachos
+        uses: docker/build-push-action@v5
+        with:
+          context: ./back-Despachos_SpringBoot
+          push: true
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-backend-despachos:${{ github.sha }}
+          platforms: linux/amd64
+
+      # Backend Ventas
+      - name: 🐳 Build & Push Backend Ventas
+        uses: docker/build-push-action@v5
+        with:
+          context: ./back-Ventas_SpringBoot
+          push: true
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-backend-ventas:${{ github.sha }}
+          platforms: linux/amd64
+
+      # Frontend
+      - name: 🐳 Build & Push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./front_despacho
+          push: true
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-frontend:${{ github.sha }}
+          platforms: linux/amd64
+
+      # Despliegue en EC2
+      - name: 🚀 Deploy en EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            ECR_URL=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin $ECR_URL
+            
+            docker stop backend-despachos backend-ventas frontend-despacho 2>/dev/null || true
+            docker rm backend-despachos backend-ventas frontend-despacho 2>/dev/null || true
+            
+            docker pull $ECR_URL/proyecto-semestral-backend-despachos:${{ github.sha }}
+            docker pull $ECR_URL/proyecto-semestral-backend-ventas:${{ github.sha }}
+            docker pull $ECR_URL/proyecto-semestral-frontend:${{ github.sha }}
+            
+            docker run -d --name backend-despachos --network backend-network -p 8081:8081 \
+              -e SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/despachos_ventas_db \
+              -e SPRING_DATASOURCE_USERNAME=admin \
+              -e SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              $ECR_URL/proyecto-semestral-backend-despachos:${{ github.sha }}
+            
+            docker run -d --name backend-ventas --network backend-network -p 8082:8082 \
+              -e SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/despachos_ventas_db \
+              -e SPRING_DATASOURCE_USERNAME=admin \
+              -e SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              $ECR_URL/proyecto-semestral-backend-ventas:${{ github.sha }}
+            
+            docker run -d --name frontend-despacho -p 80:80 \
+              $ECR_URL/proyecto-semestral-frontend:${{ github.sha }}
+            
+            echo "✅ Despliegue completado!"

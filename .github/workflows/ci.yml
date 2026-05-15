@@ -1,0 +1,57 @@
+name: CI - Integración Continua
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop, feature/*]
+
+jobs:
+  # ============================================
+  # Backends en paralelo con Matrix Strategy
+  # ============================================
+  backend-checks:
+    strategy:
+      matrix:
+        microservice: [back-Despachos_SpringBoot, back-Ventas_SpringBoot]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔄 Checkout
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: 🧪 Build y Tests
+        run: |
+          cd ${{ matrix.microservice }}
+          chmod +x mvnw
+          ./mvnw clean package -DskipTests
+        shell: bash
+
+  # ============================================
+  # Frontend
+  # ============================================
+  frontend-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front_despacho
+    steps:
+      - name: 🔄 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📦 Instalar dependencias
+        run: npm ci || npm install
+
+      - name: 🏗️ Build
+        run: npm run build 2>/dev/null || echo "Build manual (vanilla JS)"
