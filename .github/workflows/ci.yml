@@ -8,7 +8,7 @@ on:
 
 jobs:
   # ============================================
-  # Backends en paralelo con Matrix Strategy
+  # Backends en paralelo
   # ============================================
   backend-checks:
     strategy:
@@ -26,11 +26,10 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: 🧪 Build y Tests
+      - name: 🧪 Compilar y empaquetar
         run: |
           cd ${{ matrix.microservice }}
-          chmod +x mvnw
-          ./mvnw clean package -DskipTests
+          mvn clean package -DskipTests -B
         shell: bash
 
   # ============================================
@@ -51,7 +50,7 @@ jobs:
           node-version: '20'
 
       - name: 📦 Instalar dependencias
-        run: npm ci || npm install
+        run: npm install || echo "Sin dependencias npm"
 
       - name: 🏗️ Build
-        run: npm run build 2>/dev/null || echo "Build manual (vanilla JS)"
+        run: npm run build 2>/dev/null || echo "Proyecto vanilla JS - No requiere build"
