@@ -1,28 +1,23 @@
-# ============================================
-# Proveedor AWS
-# ============================================
 provider "aws" {
-  region = var.aws_region
+  region = "us-east-1"
 }
 
-# ============================================
 # VPC
-# ============================================
 resource "aws_vpc" "main" {
-  cidr_block = var.vpc_cidr
-  tags = { Name = "${var.project_name}-vpc" }
+  cidr_block = "10.0.0.0/16"
+  tags = { Name = "devops-vpc" }
 }
 
 resource "aws_subnet" "publica" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.subnet_publica_cidr
+  cidr_block              = "10.0.1.0/24"
   map_public_ip_on_launch = true
-  tags = { Name = "${var.project_name}-subnet-publica" }
+  tags = { Name = "devops-subnet-publica" }
 }
 
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
-  tags = { Name = "${var.project_name}-igw" }
+  tags = { Name = "devops-igw" }
 }
 
 resource "aws_route_table" "publica" {
@@ -38,12 +33,10 @@ resource "aws_route_table_association" "publica" {
   route_table_id = aws_route_table.publica.id
 }
 
-# ============================================
-# Security Groups
-# ============================================
+# Security Group
 resource "aws_security_group" "ecs_sg" {
-  name        = "${var.project_name}-sg-ecs"
-  description = "Security group for ECS services"
+  name        = "devops-sg-ecs"
+  description = "Security group for ECS"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -51,137 +44,87 @@ resource "aws_security_group" "ecs_sg" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP"
   }
-
   ingress {
     from_port   = 8081
     to_port     = 8082
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Backend APIs"
   }
-
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "All outbound"
   }
-
-  tags = { Name = "${var.project_name}-sg-ecs" }
 }
 
-# ============================================
-# ECR - Repositorios de imágenes
-# ============================================
-resource "aws_ecr_repository" "frontend" {
-  name = "${var.project_name}-frontend"
-  tags = { Name = "${var.project_name}-ecr-frontend" }
-}
+# ECR
+resource "aws_ecr_repository" "frontend" { name = "devops-frontend" }
+resource "aws_ecr_repository" "backend_despachos" { name = "devops-backend-despachos" }
+resource "aws_ecr_repository" "backend_ventas" { name = "devops-backend-ventas" }
 
-resource "aws_ecr_repository" "backend_despachos" {
-  name = "${var.project_name}-backend-despachos"
-  tags = { Name = "${var.project_name}-ecr-despachos" }
-}
-
-resource "aws_ecr_repository" "backend_ventas" {
-  name = "${var.project_name}-backend-ventas"
-  tags = { Name = "${var.project_name}-ecr-ventas" }
-}
-
-# ============================================
 # ECS Cluster
-# ============================================
-resource "aws_ecs_cluster" "main" {
-  name = "${var.project_name}-cluster"
-  tags = { Name = "${var.project_name}-cluster" }
-}
+resource "aws_ecs_cluster" "main" { name = "devops-cluster" }
 
-# ============================================
-# ECS Task Definitions
-# ============================================
+# Task Definition Frontend
 resource "aws_ecs_task_definition" "frontend" {
-  family                   = "${var.project_name}-frontend"
+  family                   = "devops-frontend"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
   memory                   = "512"
-  execution_role_arn       = "arn:aws:iam::${var.aws_account_id}:role/LabRole"
-  task_role_arn            = "arn:aws:iam::${var.aws_account_id}:role/LabRole"
-
+  execution_role_arn       = var.lab_role_arn
+  task_role_arn            = var.lab_role_arn
   container_definitions = jsonencode([{
     name      = "frontend"
     image     = "${aws_ecr_repository.frontend.repository_url}:latest"
     essential = true
-    portMappings = [{
-      containerPort = 80
-      hostPort      = 80
-    }]
+    portMappings = [{ containerPort = 80, hostPort = 80 }]
   }])
 }
 
+# Task Definition Backend Despachos
 resource "aws_ecs_task_definition" "backend_despachos" {
-  family                   = "${var.project_name}-backend-despachos"
+  family                   = "devops-backend-despachos"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "512"
   memory                   = "1024"
-  execution_role_arn       = "arn:aws:iam::${var.aws_account_id}:role/LabRole"
-  task_role_arn            = "arn:aws:iam::${var.aws_account_id}:role/LabRole"
-
+  execution_role_arn       = var.lab_role_arn
+  task_role_arn            = var.lab_role_arn
   container_definitions = jsonencode([{
     name      = "backend-despachos"
     image     = "${aws_ecr_repository.backend_despachos.repository_url}:latest"
     essential = true
-    portMappings = [{
-      containerPort = 8081
-      hostPort      = 8081
-    }]
-    environment = [
-      { name = "SPRING_DATASOURCE_URL", value = "jdbc:postgresql://${aws_db_instance.postgres.endpoint}/${var.db_name}" },
-      { name = "SPRING_DATASOURCE_USERNAME", value = var.db_username },
-      { name = "SPRING_DATASOURCE_PASSWORD", value = var.db_password }
-    ]
+    portMappings = [{ containerPort = 8081, hostPort = 8081 }]
   }])
 }
 
+# Task Definition Backend Ventas
 resource "aws_ecs_task_definition" "backend_ventas" {
-  family                   = "${var.project_name}-backend-ventas"
+  family                   = "devops-backend-ventas"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "512"
   memory                   = "1024"
-  execution_role_arn       = "arn:aws:iam::${var.aws_account_id}:role/LabRole"
-  task_role_arn            = "arn:aws:iam::${var.aws_account_id}:role/LabRole"
-
+  execution_role_arn       = var.lab_role_arn
+  task_role_arn            = var.lab_role_arn
   container_definitions = jsonencode([{
     name      = "backend-ventas"
     image     = "${aws_ecr_repository.backend_ventas.repository_url}:latest"
     essential = true
-    portMappings = [{
-      containerPort = 8082
-      hostPort      = 8082
-    }]
-    environment = [
-      { name = "SPRING_DATASOURCE_URL", value = "jdbc:postgresql://${aws_db_instance.postgres.endpoint}/${var.db_name}" },
-      { name = "SPRING_DATASOURCE_USERNAME", value = var.db_username },
-      { name = "SPRING_DATASOURCE_PASSWORD", value = var.db_password }
-    ]
+    portMappings = [{ containerPort = 8082, hostPort = 8082 }]
   }])
 }
 
-# ============================================
 # ECS Services
-# ============================================
 resource "aws_ecs_service" "frontend" {
-  name            = "${var.project_name}-frontend-service"
+  name            = "devops-frontend-service"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.frontend.arn
   launch_type     = "FARGATE"
   desired_count   = 1
-
   network_configuration {
     subnets          = [aws_subnet.publica.id]
     security_groups  = [aws_security_group.ecs_sg.id]
@@ -190,12 +133,11 @@ resource "aws_ecs_service" "frontend" {
 }
 
 resource "aws_ecs_service" "backend_despachos" {
-  name            = "${var.project_name}-backend-despachos-service"
+  name            = "devops-backend-despachos-service"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.backend_despachos.arn
   launch_type     = "FARGATE"
   desired_count   = 1
-
   network_configuration {
     subnets          = [aws_subnet.publica.id]
     security_groups  = [aws_security_group.ecs_sg.id]
@@ -204,34 +146,14 @@ resource "aws_ecs_service" "backend_despachos" {
 }
 
 resource "aws_ecs_service" "backend_ventas" {
-  name            = "${var.project_name}-backend-ventas-service"
+  name            = "devops-backend-ventas-service"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.backend_ventas.arn
   launch_type     = "FARGATE"
   desired_count   = 1
-
   network_configuration {
     subnets          = [aws_subnet.publica.id]
     security_groups  = [aws_security_group.ecs_sg.id]
     assign_public_ip = true
   }
-}
-
-# ============================================
-# RDS PostgreSQL
-# ============================================
-resource "aws_db_instance" "postgres" {
-  identifier             = "${var.project_name}-db"
-  engine                 = "postgres"
-  engine_version         = "15"
-  instance_class         = "db.t3.micro"
-  allocated_storage      = 20
-  db_name                = var.db_name
-  username               = var.db_username
-  password               = var.db_password
-  skip_final_snapshot    = true
-  publicly_accessible    = true
-  vpc_security_group_ids = [aws_security_group.ecs_sg.id]
-
-  tags = { Name = "${var.project_name}-db" }
 }
