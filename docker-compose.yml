@@ -6,16 +6,21 @@ services:
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
-      # La base de datos inicial. La propiedad createDatabaseIfNotExist de Spring 
-      # creará automáticamente las demás si faltan.
+      # Esta variable crea la base de datos inicial, pero el init.sql creará la otra
       MYSQL_DATABASE: db_ventas 
     ports:
       - "3306:3306"
     volumes:
-      # PERSISTENCIA DE DATOS: Requisito de la pauta para no perder información
       - mysql_data:/var/lib/mysql
+      # IMPORTANTE: Mapeo para creación automática de bases de datos
+      - ./mysql-init:/docker-entrypoint-initdb.d
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   # 2. Microservicio de Despachos
   backend-despachos:
@@ -27,15 +32,16 @@ services:
     ports:
       - "8081:8081"
     environment:
-      # Se inyectan las variables que espera tu application.properties
       - DB_ENDPOINT=mysql_db
       - DB_PORT=3306
       - DB_NAME=db_despachos
       - DB_USERNAME=root
       - DB_PASSWORD=rootpassword
       - SERVER_PORT=8081
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql_db:3306/db_despachos?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     depends_on:
-      - mysql_db
+      mysql_db:
+        condition: service_healthy
     networks:
       - app-network
 
@@ -47,20 +53,22 @@ services:
     container_name: backend_ventas
     restart: always
     ports:
-      - "8082:8082"
+      - "8085:8080" 
     environment:
       - DB_ENDPOINT=mysql_db
       - DB_PORT=3306
       - DB_NAME=db_ventas
       - DB_USERNAME=root
       - DB_PASSWORD=rootpassword
-      - SERVER_PORT=8082
+      - SERVER_PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql_db:3306/db_ventas?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     depends_on:
-      - mysql_db
+      mysql_db:
+        condition: service_healthy
     networks:
       - app-network
 
-  # 4. Frontend Web (Vite + Nginx)
+  # 4. Frontend Web
   frontend:
     build:
       context: ./front_despacho
@@ -70,17 +78,17 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend-despachos
-      - backend-ventas
+      backend-despachos:
+        condition: service_started
+      backend-ventas:
+        condition: service_started
     networks:
       - app-network
 
-# Definición del Volumen nombrado para la persistencia
 volumes:
   mysql_data:
     driver: local
 
-# Red interna para que los contenedores se comuniquen de forma segura
 networks:
   app-network:
     driver: bridge
