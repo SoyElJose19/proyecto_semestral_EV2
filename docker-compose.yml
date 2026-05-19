@@ -1,0 +1,86 @@
+services:
+  # 1. Base de Datos MySQL
+  mysql_db:
+    image: mysql:8.0
+    container_name: mysql_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      # La base de datos inicial. La propiedad createDatabaseIfNotExist de Spring 
+      # creará automáticamente las demás si faltan.
+      MYSQL_DATABASE: db_ventas 
+    ports:
+      - "3306:3306"
+    volumes:
+      # PERSISTENCIA DE DATOS: Requisito de la pauta para no perder información
+      - mysql_data:/var/lib/mysql
+    networks:
+      - app-network
+
+  # 2. Microservicio de Despachos
+  backend-despachos:
+    build:
+      context: ./back-Despachos_SpringBoot
+      dockerfile: Dockerfile
+    container_name: backend_despachos
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      # Se inyectan las variables que espera tu application.properties
+      - DB_ENDPOINT=mysql_db
+      - DB_PORT=3306
+      - DB_NAME=db_despachos
+      - DB_USERNAME=root
+      - DB_PASSWORD=rootpassword
+      - SERVER_PORT=8081
+    depends_on:
+      - mysql_db
+    networks:
+      - app-network
+
+  # 3. Microservicio de Ventas
+  backend-ventas:
+    build:
+      context: ./back-Ventas_SpringBoot
+      dockerfile: Dockerfile
+    container_name: backend_ventas
+    restart: always
+    ports:
+      - "8082:8082"
+    environment:
+      - DB_ENDPOINT=mysql_db
+      - DB_PORT=3306
+      - DB_NAME=db_ventas
+      - DB_USERNAME=root
+      - DB_PASSWORD=rootpassword
+      - SERVER_PORT=8082
+    depends_on:
+      - mysql_db
+    networks:
+      - app-network
+
+  # 4. Frontend Web (Vite + Nginx)
+  frontend:
+    build:
+      context: ./front_despacho
+      dockerfile: Dockerfile
+    container_name: frontend_web
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend-despachos
+      - backend-ventas
+    networks:
+      - app-network
+
+# Definición del Volumen nombrado para la persistencia
+volumes:
+  mysql_data:
+    driver: local
+
+# Red interna para que los contenedores se comuniquen de forma segura
+networks:
+  app-network:
+    driver: bridge
