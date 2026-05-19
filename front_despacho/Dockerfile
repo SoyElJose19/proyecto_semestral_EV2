@@ -8,7 +8,10 @@ RUN npm run build
 
 # Etapa 2: Servidor Web
 FROM nginx:alpine
-# Copiamos la build de Vite (suele estar en la carpeta dist)
+# Añade esta línea para copiar la configuración de Nginx:
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copiamos la build de Vite
 COPY --from=builder /app/dist /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
