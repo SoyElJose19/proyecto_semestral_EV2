@@ -8,3 +8,8 @@ infra/*.tfstate.*
 infra/.terraform.lock.hcl
 infra/terraform.tfvars
 !infra/terraform.tfvars.example
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
