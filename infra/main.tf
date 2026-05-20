@@ -309,6 +309,7 @@ resource "aws_ecs_task_definition" "backend_ventas_task" {
       protocol      = "tcp"
     }]
     environment = [
+      { name = "SERVER_PORT", value = "8080" },
       { name = "DB_ENDPOINT", value = "${aws_instance.mysql_srv.private_ip}" },
       { name = "DB_PORT", value = "3306" },
       { name = "DB_NAME", value = "db_ventas" },
@@ -351,8 +352,8 @@ resource "aws_lb_target_group" "despachos_tg" {
   vpc_id      = aws_vpc.main_vpc.id
   target_type = "ip"
   health_check {
-    path = "/actuator/health"
-    matcher = "200"
+    path    = "/"
+    matcher = "200,404,401,403"
   }
 }
 
@@ -363,8 +364,8 @@ resource "aws_lb_target_group" "ventas_tg" {
   vpc_id      = aws_vpc.main_vpc.id
   target_type = "ip"
   health_check {
-    path = "/actuator/health"
-    matcher = "200"
+    path    = "/"
+    matcher = "200,404,401,403"
   }
 }
 
@@ -493,11 +494,16 @@ resource "aws_instance" "mysql_srv" {
 
   user_data = base64encode(<<-EOF
     #!/bin/bash
-    sudo apt-get update -y
-    sudo apt-get install -y docker.io
-    sudo systemctl start docker
-    sudo systemctl enable docker
-    sudo usermod -aG docker ubuntu
+    yum update -y
+    yum install -y docker
+    systemctl start docker
+    systemctl enable docker
+    usermod -aG docker ec2-user
+
+    # Truco para esperar a que Docker despierte
+    until docker info > /dev/null 2>&1; do
+      sleep 2
+    done
 
     mkdir -p /opt/mysql-init
     cat > /opt/mysql-init/init.sql <<SQL
@@ -523,7 +529,6 @@ resource "aws_instance" "mysql_srv" {
 
   tags = { Name = "EC2-MySQL-Proyecto" }
 }
-
 # ====== 9. CLOUDWATCH LOGS ======
 resource "aws_cloudwatch_log_group" "ecs_frontend" {
   name = "/ecs/proyecto-semestral-frontend"
