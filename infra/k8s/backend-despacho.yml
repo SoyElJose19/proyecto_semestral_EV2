@@ -1,4 +1,3 @@
-# Despliegue del Backend de Despachos
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,15 +12,21 @@ spec:
       labels:
         app: backend-despacho
     spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.28
+          command: ['sh', '-c', 'until nc -z mysql 3306; do echo waiting for mysql; sleep 2; done;']
       containers:
         - name: backend-despacho
-          image: backend-despachos:latest
-          imagePullPolicy: Never
+          image: 058264544484.dkr.ecr.us-east-1.amazonaws.com/backend-despachos:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8081
           env:
+            - name: SERVER_PORT
+              value: "8081"
             - name: SPRING_DATASOURCE_URL
-              value: "jdbc:mysql://mysql:3306/despachosdb?useSSL=false&allowPublicKeyRetrieval=true"
+              value: "jdbc:mysql://mysql:3306/db_despachos?useSSL=false&allowPublicKeyRetrieval=true"
             - name: SPRING_DATASOURCE_USERNAME
               value: "root"
             - name: SPRING_DATASOURCE_PASSWORD

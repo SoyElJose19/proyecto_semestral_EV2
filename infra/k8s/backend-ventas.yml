@@ -1,4 +1,4 @@
-# Despliegue del Backend de Ventas
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,15 +13,21 @@ spec:
       labels:
         app: backend-ventas
     spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.28
+          command: ['sh', '-c', 'until nc -z mysql 3306; do echo waiting for mysql; sleep 2; done;']
       containers:
         - name: backend-ventas
-          image: backend-ventas:latest
-          imagePullPolicy: Never
+          image: 058264544484.dkr.ecr.us-east-1.amazonaws.com/backend-ventas:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8082
           env:
+            - name: SERVER_PORT
+              value: "8082"
             - name: SPRING_DATASOURCE_URL
-              value: "jdbc:mysql://mysql:3306/ventasdb?useSSL=false&allowPublicKeyRetrieval=true"
+              value: "jdbc:mysql://mysql:3306/db_ventas?useSSL=false&allowPublicKeyRetrieval=true"
             - name: SPRING_DATASOURCE_USERNAME
               value: "root"
             - name: SPRING_DATASOURCE_PASSWORD
@@ -33,7 +39,7 @@ kind: Service
 metadata:
   name: backend-ventas
 spec:
-  type: NodePort # <--- Cambiar de ClusterIP a NodePort
+  type: NodePort
   selector:
     app: backend-ventas
   ports:

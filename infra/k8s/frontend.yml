@@ -15,9 +15,8 @@ spec:
     spec:
       containers:
         - name: frontend-despacho
-          image: frontend-despacho:latest
-          #no descargar la imagen desde Docker Hub, sinó que local.
-          imagePullPolicy: Never
+          image: 058264544484.dkr.ecr.us-east-1.amazonaws.com/frontend-despacho:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
 ---
@@ -27,6 +26,7 @@ kind: Service
 metadata:
   name: frontend-despacho
 spec:
+  type: LoadBalancer
   selector:
     app: frontend-despacho
   ports:

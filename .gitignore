@@ -1,0 +1,35 @@
+# --- Terraform ---
+# Ignorar estado y carpetas temporales de Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.tfvars.json
+.terraform.lock.hcl
+
+# --- Backend (Spring Boot/Java) ---
+target/
+build/
+.gradle/
+*.jar
+*.class
+.settings/
+.classpath
+.project
+
+# --- Frontend (Node/React) ---
+node_modules/
+dist/
+build/
+.env
+.env.local
+
+# --- Sistema / IDE / Configs ---
+.DS_Store
+.vscode/
+.idea/
+.kube/
+kubeconfig.yaml
+
+# --- Logs ---
+*.log
