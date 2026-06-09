@@ -1,0 +1,42 @@
+# Despliegue del Backend de Ventas
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-ventas
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend-ventas
+  template:
+    metadata:
+      labels:
+        app: backend-ventas
+    spec:
+      containers:
+        - name: backend-ventas
+          image: backend-ventas:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8082
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:mysql://mysql:3306/ventasdb?useSSL=false&allowPublicKeyRetrieval=true"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "root"
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: "root"
+---
+# Servicio del Backend de Ventas
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-ventas
+spec:
+  type: NodePort # <--- Cambiar de ClusterIP a NodePort
+  selector:
+    app: backend-ventas
+  ports:
+    - port: 8082
+      targetPort: 8082
+      nodePort: 30082

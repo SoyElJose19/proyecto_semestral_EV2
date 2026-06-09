@@ -1,159 +1,108 @@
+terraform {
+  required_providers {
+    aws = {
+        source  = "hashicorp/aws"
+        # Usamos 6.0 para evitar los conflictos de bloqueo de versiones que tuviste antes
+        version = "~> 6.0" 
+    }
+  }
+}
+
 provider "aws" {
   region = "us-east-1"
 }
 
-# VPC
-resource "aws_vpc" "main" {
-  cidr_block = "10.0.0.0/16"
-  tags = { Name = "devops-vpc" }
+# Rol de AWS Academy integrado directamente
+data "aws_iam_role" "labrole" {
+  name = "LabRole"
 }
 
-resource "aws_subnet" "publica" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.1.0/24"
+# ====== 1. REDES ======
+resource "aws_vpc" "eks_vpc" {
+  cidr_block = "10.0.0.0/16"
+  tags = { Name = "eks-vpc" }
+}
+
+resource "aws_subnet" "eks_subnet_1" {
+  vpc_id                  = aws_vpc.eks_vpc.id
+  cidr_block              = "10.0.10.0/24"
+  availability_zone       = "us-east-1a"
   map_public_ip_on_launch = true
-  tags = { Name = "devops-subnet-publica" }
+  tags = { Name = "eks-subnet-1" }
+}
+
+resource "aws_subnet" "eks_subnet_2" {
+  vpc_id                  = aws_vpc.eks_vpc.id
+  cidr_block              = "10.0.20.0/24"
+  availability_zone       = "us-east-1b"
+  map_public_ip_on_launch = true
+  tags = { Name = "eks-subnet-2" }
 }
 
 resource "aws_internet_gateway" "igw" {
-  vpc_id = aws_vpc.main.id
-  tags = { Name = "devops-igw" }
+  vpc_id = aws_vpc.eks_vpc.id
+  tags = { Name = "eks-igw" }
 }
 
-resource "aws_route_table" "publica" {
-  vpc_id = aws_vpc.main.id
+resource "aws_route_table" "rt" {
+  vpc_id = aws_vpc.eks_vpc.id
   route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.igw.id
   }
+  tags = { Name = "eks-route-table" }
 }
 
-resource "aws_route_table_association" "publica" {
-  subnet_id      = aws_subnet.publica.id
-  route_table_id = aws_route_table.publica.id
+resource "aws_route_table_association" "rta_1" {
+  subnet_id      = aws_subnet.eks_subnet_1.id
+  route_table_id = aws_route_table.rt.id
 }
 
-# Security Group
-resource "aws_security_group" "ecs_sg" {
-  name        = "devops-sg-ecs"
-  description = "Security group for ECS"
-  vpc_id      = aws_vpc.main.id
+resource "aws_route_table_association" "rta_2" {
+  subnet_id      = aws_subnet.eks_subnet_2.id
+  route_table_id = aws_route_table.rt.id
+}
 
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  ingress {
-    from_port   = 8081
-    to_port     = 8082
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+# ====== 2. EKS (KUBERNETES) ======
+resource "aws_eks_cluster" "eks" {
+  name     = "devops3-cluster"
+  role_arn = data.aws_iam_role.labrole.arn
+  vpc_config {
+    subnet_ids = [aws_subnet.eks_subnet_1.id, aws_subnet.eks_subnet_2.id]
   }
 }
 
-# ECR
-resource "aws_ecr_repository" "frontend" { name = "devops-frontend" }
-resource "aws_ecr_repository" "backend_despachos" { name = "devops-backend-despachos" }
-resource "aws_ecr_repository" "backend_ventas" { name = "devops-backend-ventas" }
-
-# ECS Cluster
-resource "aws_ecs_cluster" "main" { name = "devops-cluster" }
-
-# Task Definition Frontend
-resource "aws_ecs_task_definition" "frontend" {
-  family                   = "devops-frontend"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"
-  memory                   = "512"
-  execution_role_arn       = var.lab_role_arn
-  task_role_arn            = var.lab_role_arn
-  container_definitions = jsonencode([{
-    name      = "frontend"
-    image     = "${aws_ecr_repository.frontend.repository_url}:latest"
-    essential = true
-    portMappings = [{ containerPort = 80, hostPort = 80 }]
-  }])
-}
-
-# Task Definition Backend Despachos
-resource "aws_ecs_task_definition" "backend_despachos" {
-  family                   = "devops-backend-despachos"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = "512"
-  memory                   = "1024"
-  execution_role_arn       = var.lab_role_arn
-  task_role_arn            = var.lab_role_arn
-  container_definitions = jsonencode([{
-    name      = "backend-despachos"
-    image     = "${aws_ecr_repository.backend_despachos.repository_url}:latest"
-    essential = true
-    portMappings = [{ containerPort = 8081, hostPort = 8081 }]
-  }])
-}
-
-# Task Definition Backend Ventas
-resource "aws_ecs_task_definition" "backend_ventas" {
-  family                   = "devops-backend-ventas"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = "512"
-  memory                   = "1024"
-  execution_role_arn       = var.lab_role_arn
-  task_role_arn            = var.lab_role_arn
-  container_definitions = jsonencode([{
-    name      = "backend-ventas"
-    image     = "${aws_ecr_repository.backend_ventas.repository_url}:latest"
-    essential = true
-    portMappings = [{ containerPort = 8082, hostPort = 8082 }]
-  }])
-}
-
-# ECS Services
-resource "aws_ecs_service" "frontend" {
-  name            = "devops-frontend-service"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.frontend.arn
-  launch_type     = "FARGATE"
-  desired_count   = 1
-  network_configuration {
-    subnets          = [aws_subnet.publica.id]
-    security_groups  = [aws_security_group.ecs_sg.id]
-    assign_public_ip = true
+resource "aws_eks_node_group" "workers" {
+  cluster_name    = aws_eks_cluster.eks.name
+  node_group_name = "workers"
+  node_role_arn   = data.aws_iam_role.labrole.arn
+  subnet_ids      = [aws_subnet.eks_subnet_1.id, aws_subnet.eks_subnet_2.id]
+  
+  scaling_config {
+    desired_size = 2
+    max_size     = 3
+    min_size     = 1
   }
+  instance_types = ["t3.medium"]
+  capacity_type  = "ON_DEMAND"
 }
 
-resource "aws_ecs_service" "backend_despachos" {
-  name            = "devops-backend-despachos-service"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.backend_despachos.arn
-  launch_type     = "FARGATE"
-  desired_count   = 1
-  network_configuration {
-    subnets          = [aws_subnet.publica.id]
-    security_groups  = [aws_security_group.ecs_sg.id]
-    assign_public_ip = true
-  }
+# ====== 3. REPOSITORIOS ECR ======
+# Estos nombres coinciden exactamente con los manifiestos de K8s
+resource "aws_ecr_repository" "repo_front" {
+  name                 = "frontend-despacho"
+  image_scanning_configuration { scan_on_push = true }
+  force_delete         = true
 }
 
-resource "aws_ecs_service" "backend_ventas" {
-  name            = "devops-backend-ventas-service"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.backend_ventas.arn
-  launch_type     = "FARGATE"
-  desired_count   = 1
-  network_configuration {
-    subnets          = [aws_subnet.publica.id]
-    security_groups  = [aws_security_group.ecs_sg.id]
-    assign_public_ip = true
-  }
+resource "aws_ecr_repository" "repo_back_despachos" {
+  name                 = "backend-despachos"
+  image_scanning_configuration { scan_on_push = true }
+  force_delete         = true
+}
+
+resource "aws_ecr_repository" "repo_back_ventas" {
+  name                 = "backend-ventas"
+  image_scanning_configuration { scan_on_push = true }
+  force_delete         = true
 }

@@ -1,0 +1,38 @@
+#Despliegue
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-despacho
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-despacho
+  template:
+    metadata:
+      labels:
+        app: frontend-despacho
+    spec:
+      containers:
+        - name: frontend-despacho
+          image: frontend-despacho:latest
+          #no descargar la imagen desde Docker Hub, sinó que local.
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 80
+---
+#Service:
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-despacho
+spec:
+  selector:
+    app: frontend-despacho
+  ports:
+    - port: 80
+      targetPort: 80
+      #Puerto expuesto en el nodo de kubernet:
+      nodePort: 30080
+  #NodePort: expone el servicio fuera de cluster kubernet:
+  type: NodePort
