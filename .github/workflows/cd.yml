@@ -1,0 +1,86 @@
+name: CD - Despliegue Continuo
+
+on:
+  push:
+    branches: [deploy]
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Checkout
+      - name: 🔄 Checkout código
+        uses: actions/checkout@v4
+
+      # 2. Configurar credenciales AWS
+      - name: ⚙️ Configurar AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 3. Login a ECR
+      - name: 🔐 Login a Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 4. Build & Push Backend Despachos
+      - name: 🐳 Build & Push Backend Despachos
+        uses: docker/build-push-action@v5
+        with:
+          context: ./back-Despachos_SpringBoot
+          push: true
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-backend-despachos:${{ github.sha }}
+          platforms: linux/amd64
+
+      # 5. Build & Push Backend Ventas
+      - name: 🐳 Build & Push Backend Ventas
+        uses: docker/build-push-action@v5
+        with:
+          context: ./back-Ventas_SpringBoot
+          push: true
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-backend-ventas:${{ github.sha }}
+          platforms: linux/amd64
+
+      # 6. Build & Push Frontend
+      - name: 🐳 Build & Push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./front_despacho
+          push: true
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-frontend:${{ github.sha }}
+          platforms: linux/amd64
+
+      # 7. Forzar nuevo despliegue en ECS
+      - name: 🚀 Actualizar servicio Backend Despachos
+        run: |
+          aws ecs update-service \
+            --cluster proyecto-semestral-cluster \
+            --service proyecto-semestral-backend-despachos-service \
+            --force-new-deployment
+
+      - name: 🚀 Actualizar servicio Backend Ventas
+        run: |
+          aws ecs update-service \
+            --cluster proyecto-semestral-cluster \
+            --service proyecto-semestral-backend-ventas-service \
+            --force-new-deployment
+
+      - name: 🚀 Actualizar servicio Frontend
+        run: |
+          aws ecs update-service \
+            --cluster proyecto-semestral-cluster \
+            --service proyecto-semestral-frontend-service \
+            --force-new-deployment
+
+      - name: ✅ Confirmación de despliegue
+        run: |
+          echo "============================================"
+          echo "Despliegue completado en ECS Fargate"
+          echo "Frontend: IP pública asignada por ECS"
+          echo "Backend Despachos: puerto 8081"
+          echo "Backend Ventas: puerto 8082"
+          echo "============================================"

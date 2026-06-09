@@ -1,0 +1,94 @@
+services:
+  # 1. Base de Datos MySQL
+  mysql_db:
+    image: mysql:8.0
+    container_name: mysql_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      # Esta variable crea la base de datos inicial, pero el init.sql creará la otra
+      MYSQL_DATABASE: db_ventas 
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # IMPORTANTE: Mapeo para creación automática de bases de datos
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 2. Microservicio de Despachos
+  backend-despachos:
+    build:
+      context: ./back-Despachos_SpringBoot
+      dockerfile: Dockerfile
+    container_name: backend_despachos
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      - DB_ENDPOINT=mysql_db
+      - DB_PORT=3306
+      - DB_NAME=db_despachos
+      - DB_USERNAME=root
+      - DB_PASSWORD=rootpassword
+      - SERVER_PORT=8081
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql_db:3306/db_despachos?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    depends_on:
+      mysql_db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # 3. Microservicio de Ventas
+  backend-ventas:
+    build:
+      context: ./back-Ventas_SpringBoot
+      dockerfile: Dockerfile
+    container_name: backend_ventas
+    restart: always
+    ports:
+      - "8085:8080" 
+    environment:
+      - DB_ENDPOINT=mysql_db
+      - DB_PORT=3306
+      - DB_NAME=db_ventas
+      - DB_USERNAME=root
+      - DB_PASSWORD=rootpassword
+      - SERVER_PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql_db:3306/db_ventas?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    depends_on:
+      mysql_db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # 4. Frontend Web
+  frontend:
+    build:
+      context: ./front_despacho
+      dockerfile: Dockerfile
+    container_name: frontend_web
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      backend-despachos:
+        condition: service_started
+      backend-ventas:
+        condition: service_started
+    networks:
+      - app-network
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge
