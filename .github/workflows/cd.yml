@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -15,9 +16,6 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # ==========================================
-      # CONFIGURACIÓN DE ENTORNO (JAVA)
-      # ==========================================
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -25,9 +23,6 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      # ==========================================
-      # COMPILACIÓN DE JAR DESDE TUS CARPETAS
-      # ==========================================
       - name: Build Ventas Jar
         run: |
           cd back-Ventas_SpringBoot
@@ -38,9 +33,6 @@ jobs:
           cd back-Despachos_SpringBoot
           mvn clean package -DskipTests
 
-      # ==========================================
-      # CONFIGURACIÓN DE CREDENCIALES AWS & ECR
-      # ==========================================
       - name: Configurar credenciales de AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -63,9 +55,6 @@ jobs:
           echo "BACKEND_VENTAS_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/backend-ventas" >> $GITHUB_ENV
           echo "FRONTEND_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend-despacho" >> $GITHUB_ENV
 
-      # ==========================================
-      # CONSTRUCCIÓN Y SUBIDA DE IMÁGENES DOCKER
-      # ==========================================
       - name: Build & Push Backend Despachos
         run: |
           cd back-Despachos_SpringBoot
@@ -83,15 +72,11 @@ jobs:
           cd front_despacho
           docker build -t $FRONTEND_ECR:${{ github.sha }} .
           docker push $FRONTEND_ECR:${{ github.sha }}
-      
-      # ==========================================
-      # DESPLIEGUE EN AMAZON EKS (KUBERNETES)
-      # ==========================================
+
       - name: Configurar Kubeconfig para EKS
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
          
-      # 👇 ESTE ES EL PASO VITAL QUE FALTABA PARA MYSQL 👇
       - name: Crear o actualizar ConfigMap de inicialización MySQL
         run: |
           kubectl create configmap mysql-init-config --from-file=./mysql-init/init.sql -o yaml --dry-run=client | kubectl apply -f -
@@ -110,7 +95,6 @@ jobs:
         run: |
           kubectl rollout status deployment/backend-despacho --timeout=5m
           
-      # 👇 DIAGNÓSTICO DE PODS (Mantenido por precaución) 👇
       - name: Diagnóstico de Pods (Si falla el despliegue)
         if: failure()
         run: |
@@ -145,14 +129,14 @@ jobs:
       - name: Mostrar resumen del despliegue
         run: |
           echo "=========================================="
-          echo "✅ DESPLIEGUE COMPLETADO EXITOSAMENTE"
+          echo " DESPLIEGUE COMPLETADO EXITOSAMENTE"
           echo "=========================================="
           echo ""
-          echo "📊 Estado de los Pods:"
+          echo " Estado de los Pods:"
           kubectl get pods
           echo ""
-          echo "📊 Estado de los Servicios:"
+          echo " Estado de los Servicios:"
           kubectl get svc
           echo ""
-          echo "📊 Autoscaling (HPA):"
+          echo " Autoscaling (HPA):"
           kubectl get hpa
