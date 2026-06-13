@@ -1,24 +1,46 @@
-name: Despliegue en AWS con EKS - Proyecto Semestral Back Despachos
+name: Despliegue en AWS con EKS (Elastic Kubernetes Service)
 
 on:
   push:
     branches:
       - develop
-      # Agrega otras ramas si es necesario
-      # - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: us-east-1
-      CLUSTER_NAME: devops-cluster  # Cambia esto por el nombre de tu clúster EKS
-      SERVICE_NAME: proyecto-semestral-back-despachos
-      
+      CLUSTER_NAME: devops-proyect-cluster 
     steps:
-      - name: Checkout (git clone...)
+      - name: Checkout Code
         uses: actions/checkout@v4
 
+      # ==========================================
+      # CONFIGURACIÓN DE ENTORNO (JAVA)
+      # ==========================================
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # ==========================================
+      # COMPILACIÓN DE JAR DESDE TUS CARPETAS
+      # ==========================================
+      - name: Build Ventas Jar
+        run: |
+          cd back-Ventas_SpringBoot
+          mvn clean package -DskipTests
+
+      - name: Build Despachos Jar
+        run: |
+          cd back-Despachos_SpringBoot
+          mvn clean package -DskipTests
+
+      # ==========================================
+      # CONFIGURACIÓN DE CREDENCIALES AWS & ECR
+      # ==========================================
       - name: Configurar credenciales de AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -28,74 +50,91 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       
       - name: Loguear con ECR (Elastic Container Registry)
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       
       - name: Rescatar el AWS Account ID
         run: |
           echo "ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
 
-      - name: Definir la URL del ECR
+      - name: Definir las URL de los ECR (Usando tus repositorios)
         run: |
-          echo "BACKEND_DESPACHOS_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/proyecto-semestral-back-despachos" >> $GITHUB_ENV
+          echo "BACKEND_DESPACHOS_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/devops-back-despachos" >> $GITHUB_ENV
+          echo "BACKEND_VENTAS_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/devops-back-ventas" >> $GITHUB_ENV
+          echo "FRONTEND_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/devops-front-despacho" >> $GITHUB_ENV
+
+      # ==========================================
+      # CONSTRUCCIÓN Y SUBIDA DE IMÁGENES DOCKER
+      # ==========================================
+      - name: Build & Push Backend Despachos
+        run: |
+          cd back-Despachos_SpringBoot
+          docker build -t $BACKEND_DESPACHOS_ECR:${{ github.sha }} .
+          docker push $BACKEND_DESPACHOS_ECR:${{ github.sha }}
+
+      - name: Build & Push Backend Ventas
+        run: |
+          cd back-Ventas_SpringBoot
+          docker build -t $BACKEND_VENTAS_ECR:${{ github.sha }} .
+          docker push $BACKEND_VENTAS_ECR:${{ github.sha }}
+
+      - name: Build & Push Frontend
+        run: |
+          cd front_despacho
+          docker build -t $FRONTEND_ECR:${{ github.sha }} .
+          docker push $FRONTEND_ECR:${{ github.sha }}
+
+      # ==========================================
+      # DESPLIEGUE EN AMAZON EKS (KUBERNETES)
+      # ==========================================
+      - name: Configurar Kubeconfig para EKS
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      - name: Actualizar imágenes en el Clúster de Kubernetes
+        run: |
+          kubectl set image deployment/backend-despacho backend-despacho=$BACKEND_DESPACHOS_ECR:${{ github.sha }}
+          kubectl set image deployment/backend-ventas backend-ventas=$BACKEND_VENTAS_ECR:${{ github.sha }}
+          kubectl set image deployment/frontend-despacho frontend-despacho=$FRONTEND_ECR:${{ github.sha }}
       
-      # --- Build y Push del backend-despachos ---
-      - name: Build backend-despachos
-        run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            -t $BACKEND_DESPACHOS_ECR:${GITHUB_SHA} \
-            --load \
-            ./back-Despachos_SpringBoot
-          
-      - name: Push backend-despachos a ECR
-        run: |
-          docker push $BACKEND_DESPACHOS_ECR:${GITHUB_SHA}
-      
-      # También puedes hacer un tag adicional como 'latest'
-      - name: Tag como latest (opcional)
-        run: |
-          docker tag $BACKEND_DESPACHOS_ECR:${GITHUB_SHA} $BACKEND_DESPACHOS_ECR:latest
-          docker push $BACKEND_DESPACHOS_ECR:latest
-      
-      - name: Instalar kubectl
-        uses: azure/setup-kubectl@v4
-        
-      - name: Configurar EKS a través de GitHub Actions
-        run: |
-          aws eks update-kubeconfig \
-            --region $AWS_REGION \
-            --name $CLUSTER_NAME
-            
-      - name: Crear namespace si no existe (opcional)
-        run: |
-          kubectl create namespace proyecto-semestral --dry-run=client -o yaml | kubectl apply -f -
-      
-      - name: Aplicar los manifiestos de Kubernetes
-        run: |
-          # Asegúrate de que la ruta a tus manifiestos sea correcta
-          kubectl apply -f infra/k8s/
-          # Si tienes namespaces específicos, usa: kubectl apply -f infra/k8s/ -n proyecto-semestral
-          
-      - name: Actualizar nombre de la imagen en Kubernetes
-        run: |
-          kubectl set image deployment/backend-despacho \
-            backend-despacho=$BACKEND_DESPACHOS_ECR:${GITHUB_SHA} \
-            --record
-          # Si tu deployment tiene otro nombre, ajústalo:
-          # kubectl set image deployment/proyecto-semestral-back-despachos \
-          #   proyecto-semestral-back-despachos=$BACKEND_DESPACHOS_ECR:${GITHUB_SHA}
-      
-      - name: Esperar despliegue completado
+      - name: Esperar despliegue de backend-despacho
         run: |
           kubectl rollout status deployment/backend-despacho --timeout=5m
-          # kubectl rollout status deployment/proyecto-semestral-back-despachos --timeout=5m
-
-      - name: Verificar pods en ejecución
-        run: |
-          kubectl get pods
-          kubectl get services
           
-      - name: Obtener logs del pod (si hay errores)
-        if: failure()
+      - name: Esperar despliegue de backend-ventas
         run: |
-          kubectl get pods --no-headers | grep -v Running | awk '{print $1}' | xargs -I {} kubectl logs {} --tail=50 || echo "No logs disponibles"
+          kubectl rollout status deployment/backend-ventas --timeout=5m
+          
+      - name: Esperar despliegue de frontend-despacho
+        run: |
+          kubectl rollout status deployment/frontend-despacho --timeout=5m
+
+      - name: Esperar que HPA esté activo
+        run: |
+          echo "Esperando que HPA se active..."
+          sleep 10
+          kubectl get hpa
+
+      - name: Obtener URL del Frontend (LoadBalancer)
+        run: |
+          echo "=== Servicios desplegados ==="
+          kubectl get svc
+          echo ""
+          echo "=== URL del Frontend ==="
+          kubectl get service frontend-despacho -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo "Esperando asignación de LoadBalancer..."
+          echo ""
+
+      - name: Mostrar resumen del despliegue
+        run: |
+          echo "=========================================="
+          echo "✅ DESPLIEGUE COMPLETADO EXITOSAMENTE"
+          echo "=========================================="
+          echo ""
+          echo "📊 Estado de los Pods:"
+          kubectl get pods
+          echo ""
+          echo "📊 Estado de los Servicios:"
+          kubectl get svc
+          echo ""
+          echo "📊 Autoscaling (HPA):"
+          kubectl get hpa
