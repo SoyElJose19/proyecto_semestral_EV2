@@ -1,4 +1,4 @@
-name: Despliegue en AWS con EKS (Elastic Kubernetes Service) - Experiencia 3
+name: Despliegue en AWS con EKS (Elastic Kubernetes Service)
 
 on:
   push:
@@ -10,11 +10,37 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: us-east-1
-      CLUSTER_NAME: devops-cluster # Nombre anterior del clúster
+      CLUSTER_NAME: devops-proyect-cluster 
     steps:
-      - name: Checkout (git clone...)
+      - name: Checkout Code
         uses: actions/checkout@v4
 
+      # ==========================================
+      # CONFIGURACIÓN DE ENTORNO (JAVA)
+      # ==========================================
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # ==========================================
+      # COMPILACIÓN DE JAR DESDE TUS CARPETAS
+      # ==========================================
+      - name: Build Ventas Jar
+        run: |
+          cd back-Ventas_SpringBoot
+          mvn clean package -DskipTests
+
+      - name: Build Despachos Jar
+        run: |
+          cd back-Despachos_SpringBoot
+          mvn clean package -DskipTests
+
+      # ==========================================
+      # CONFIGURACIÓN DE CREDENCIALES AWS & ECR
+      # ==========================================
       - name: Configurar credenciales de AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -24,103 +50,91 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       
       - name: Loguear con ECR (Elastic Container Registry)
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       
       - name: Rescatar el AWS Account ID
         run: |
           echo "ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
 
-      - name: Definir las URL de los ECR
+      - name: Definir las URL de los ECR (Usando tus repositorios)
         run: |
           echo "BACKEND_DESPACHOS_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/devops-back-despachos" >> $GITHUB_ENV
           echo "BACKEND_VENTAS_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/devops-back-ventas" >> $GITHUB_ENV
-          echo "FRONTEND_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/devops-frontend" >> $GITHUB_ENV
-      
-      # --- 1. backend-despachos ---
-      - name: Build backend-despachos
-        run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            -t $BACKEND_DESPACHOS_ECR:${GITHUB_SHA} \
-            ./backend/back-Des \
-            --load
-      - name: Push backend-despachos
-        run: |
-          docker push $BACKEND_DESPACHOS_ECR:${GITHUB_SHA}
+          echo "FRONTEND_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/devops-front-despacho" >> $GITHUB_ENV
 
-      # --- 2. backend-ventas ---
-      - name: Build backend-ventas
+      # ==========================================
+      # CONSTRUCCIÓN Y SUBIDA DE IMÁGENES DOCKER
+      # ==========================================
+      - name: Build & Push Backend Despachos
         run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            -t $BACKEND_VENTAS_ECR:${GITHUB_SHA} \
-            ./backend/back-Ventas_SpringBoot/Springboot-API-REST \
-            --load
-      - name: Push backend-ventas
-        run: |
-          docker push $BACKEND_VENTAS_ECR:${GITHUB_SHA}
+          cd back-Despachos_SpringBoot
+          docker build -t $BACKEND_DESPACHOS_ECR:${{ github.sha }} .
+          docker push $BACKEND_DESPACHOS_ECR:${{ github.sha }}
 
-      # --- 3. frontend ---
-      - name: Build frontend
+      - name: Build & Push Backend Ventas
         run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            -t $FRONTEND_ECR:${GITHUB_SHA} \
-            ./front_despacho \
-            --load
-      - name: Push frontend
-        run: |
-          docker push $FRONTEND_ECR:${GITHUB_SHA}
-      
-      - name: Instalar kubectl
-        uses: azure/setup-kubectl@v4
-        
-      - name: Configurar EKS a través de GitHub Actions
-        run: |
-          aws eks update-kubeconfig \
-            --region $AWS_REGION \
-            --name $CLUSTER_NAME
-            
-      - name: Crear o actualizar ConfigMap de inicialización MySQL
-        run: |
-          kubectl create configmap mysql-init-config --from-file=./mysql-init/init.sql -o yaml --dry-run=client | kubectl apply -f -
+          cd back-Ventas_SpringBoot
+          docker build -t $BACKEND_VENTAS_ECR:${{ github.sha }} .
+          docker push $BACKEND_VENTAS_ECR:${{ github.sha }}
 
-      - name: Aplicar los manifiestos de Kubernetes
+      - name: Build & Push Frontend
         run: |
-          kubectl apply -f infra/k8s/
-          
-      - name: Actualizar nombre de la imagen de backend-despachos en Kubernetes
+          cd front_despacho
+          docker build -t $FRONTEND_ECR:${{ github.sha }} .
+          docker push $FRONTEND_ECR:${{ github.sha }}
+
+      # ==========================================
+      # DESPLIEGUE EN AMAZON EKS (KUBERNETES)
+      # ==========================================
+      - name: Configurar Kubeconfig para EKS
         run: |
-          kubectl set image deployment/backend-despacho \
-            backend-despacho=$BACKEND_DESPACHOS_ECR:${GITHUB_SHA}
-            
-      - name: Actualizar nombre de la imagen de backend-ventas en Kubernetes
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      - name: Actualizar imágenes en el Clúster de Kubernetes
         run: |
-          kubectl set image deployment/backend-ventas \
-            backend-ventas=$BACKEND_VENTAS_ECR:${GITHUB_SHA}
-            
-      - name: Actualizar nombre de la imagen de frontend-despacho en Kubernetes
-        run: |
-          kubectl set image deployment/frontend-despacho \
-            frontend-despacho=$FRONTEND_ECR:${GITHUB_SHA}
+          kubectl set image deployment/backend-despacho backend-despacho=$BACKEND_DESPACHOS_ECR:${{ github.sha }}
+          kubectl set image deployment/backend-ventas backend-ventas=$BACKEND_VENTAS_ECR:${{ github.sha }}
+          kubectl set image deployment/frontend-despacho frontend-despacho=$FRONTEND_ECR:${{ github.sha }}
       
       - name: Esperar despliegue de backend-despacho
         run: |
-          kubectl rollout status deployment/backend-despacho
+          kubectl rollout status deployment/backend-despacho --timeout=5m
           
       - name: Esperar despliegue de backend-ventas
         run: |
-          kubectl rollout status deployment/backend-ventas
+          kubectl rollout status deployment/backend-ventas --timeout=5m
           
       - name: Esperar despliegue de frontend-despacho
         run: |
-          kubectl rollout status deployment/frontend-despacho
+          kubectl rollout status deployment/frontend-despacho --timeout=5m
+
+      - name: Esperar que HPA esté activo
+        run: |
+          echo "Esperando que HPA se active..."
+          sleep 10
+          kubectl get hpa
 
       - name: Obtener URL del Frontend (LoadBalancer)
         run: |
-          kubectl get svc frontend-despacho
-          echo "--------------------------------------------------"
-          echo "URL del Balanceador de Carga para el Frontend:"
-          kubectl get service frontend-despacho -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo "Buscando dirección..."
+          echo "=== Servicios desplegados ==="
+          kubectl get svc
           echo ""
-          echo "--------------------------------------------------"
+          echo "=== URL del Frontend ==="
+          kubectl get service frontend-despacho -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo "Esperando asignación de LoadBalancer..."
+          echo ""
+
+      - name: Mostrar resumen del despliegue
+        run: |
+          echo "=========================================="
+          echo "✅ DESPLIEGUE COMPLETADO EXITOSAMENTE"
+          echo "=========================================="
+          echo ""
+          echo "📊 Estado de los Pods:"
+          kubectl get pods
+          echo ""
+          echo "📊 Estado de los Servicios:"
+          kubectl get svc
+          echo ""
+          echo "📊 Autoscaling (HPA):"
+          kubectl get hpa
