@@ -90,6 +90,12 @@ jobs:
       - name: Configurar Kubeconfig para EKS
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+         
+          # 👇 ESTE ES EL PASO QUE FALTA INSERTAR 👇
+      - name: Aplicar los manifiestos de Kubernetes
+        run: |
+          kubectl apply -f infra/k8s/
+          
 
       - name: Actualizar imágenes en el Clúster de Kubernetes
         run: |
