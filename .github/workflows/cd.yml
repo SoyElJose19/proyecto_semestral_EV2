@@ -1,86 +1,70 @@
-name: CD - Despliegue Continuo
+name: Despliegue continuo (CD)
 
 on:
+  pull_request:
+    branches: [ develop ]
   push:
-    branches: [deploy]
+    branches:
+      - develop
 
 env:
   AWS_REGION: us-east-1
+  ECR_REPOSITORY_PREFIX: proyecto-semestral        
+  ECS_SERVICE_DESPACHOS: proyecto-semestral-backend-despachos-service
+  ECS_SERVICE_VENTAS: proyecto-semestral-backend-ventas-service
+  ECS_SERVICE_FRONTEND: proyecto-semestral-frontend-service
+  ECS_CLUSTER: proyecto-semestral-cluster
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # 1. Checkout
-      - name: 🔄 Checkout código
+      - name: Checkout código
         uses: actions/checkout@v4
 
-      # 2. Configurar credenciales AWS
-      - name: ⚙️ Configurar AWS credentials
+      - name: Configurar AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 3. Login a ECR
-      - name: 🔐 Login a Amazon ECR
+      - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 4. Build & Push Backend Despachos
-      - name: 🐳 Build & Push Backend Despachos
+      - name: Build & Push backend-despachos
         uses: docker/build-push-action@v5
         with:
           context: ./back-Despachos_SpringBoot
           push: true
-          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-backend-despachos:${{ github.sha }}
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY_PREFIX }}-back-despachos:latest
           platforms: linux/amd64
 
-      # 5. Build & Push Backend Ventas
-      - name: 🐳 Build & Push Backend Ventas
+      - name: Build & Push backend-ventas
         uses: docker/build-push-action@v5
         with:
           context: ./back-Ventas_SpringBoot
           push: true
-          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-backend-ventas:${{ github.sha }}
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY_PREFIX }}-back-ventas:latest
           platforms: linux/amd64
 
-      # 6. Build & Push Frontend
-      - name: 🐳 Build & Push Frontend
+      - name: Build & Push frontend
         uses: docker/build-push-action@v5
         with:
           context: ./front_despacho
           push: true
-          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-frontend:${{ github.sha }}
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY_PREFIX }}-frontend:latest
           platforms: linux/amd64
 
-      # 7. Forzar nuevo despliegue en ECS
-      - name: 🚀 Actualizar servicio Backend Despachos
+      - name: Actualizar servicio Despachos
         run: |
-          aws ecs update-service \
-            --cluster proyecto-semestral-cluster \
-            --service proyecto-semestral-backend-despachos-service \
-            --force-new-deployment
+          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_DESPACHOS }} --force-new-deployment
 
-      - name: 🚀 Actualizar servicio Backend Ventas
+      - name: Actualizar servicio Ventas
         run: |
-          aws ecs update-service \
-            --cluster proyecto-semestral-cluster \
-            --service proyecto-semestral-backend-ventas-service \
-            --force-new-deployment
+          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_VENTAS }} --force-new-deployment
 
-      - name: 🚀 Actualizar servicio Frontend
+      - name: Actualizar servicio Frontend
         run: |
-          aws ecs update-service \
-            --cluster proyecto-semestral-cluster \
-            --service proyecto-semestral-frontend-service \
-            --force-new-deployment
-
-      - name: ✅ Confirmación de despliegue
-        run: |
-          echo "============================================"
-          echo "Despliegue completado en ECS Fargate"
-          echo "Frontend: IP pública asignada por ECS"
-          echo "Backend Despachos: puerto 8081"
-          echo "Backend Ventas: puerto 8082"
-          echo "============================================"
+          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_FRONTEND }} --force-new-deployment
