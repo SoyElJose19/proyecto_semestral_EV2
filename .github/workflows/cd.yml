@@ -83,7 +83,7 @@ jobs:
           cd front_despacho
           docker build -t $FRONTEND_ECR:${{ github.sha }} .
           docker push $FRONTEND_ECR:${{ github.sha }}
-
+      
       # ==========================================
       # DESPLIEGUE EN AMAZON EKS (KUBERNETES)
       # ==========================================
@@ -91,12 +91,15 @@ jobs:
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
          
-          # 👇 ESTE ES EL PASO QUE FALTA INSERTAR 👇
+      # 👇 ESTE ES EL PASO VITAL QUE FALTABA PARA MYSQL 👇
+      - name: Crear o actualizar ConfigMap de inicialización MySQL
+        run: |
+          kubectl create configmap mysql-init-config --from-file=./mysql-init/init.sql -o yaml --dry-run=client | kubectl apply -f -
+          
       - name: Aplicar los manifiestos de Kubernetes
         run: |
           kubectl apply -f infra/k8s/
           
-
       - name: Actualizar imágenes en el Clúster de Kubernetes
         run: |
           kubectl set image deployment/backend-despacho backend-despacho=$BACKEND_DESPACHOS_ECR:${{ github.sha }}
@@ -106,21 +109,15 @@ jobs:
       - name: Esperar despliegue de backend-despacho
         run: |
           kubectl rollout status deployment/backend-despacho --timeout=5m
-
-      - name: Esperar despliegue de backend-despacho
-        run: |
-          kubectl rollout status deployment/backend-despacho --timeout=5m
           
-      # 👇 AGREGA ESTE PASO DE DIAGNÓSTICO 👇
+      # 👇 DIAGNÓSTICO DE PODS (Mantenido por precaución) 👇
       - name: Diagnóstico de Pods (Si falla el despliegue)
         if: failure()
         run: |
           echo "=== ESTADO DE LOS PODS ==="
           kubectl get pods
-          echo "=== EVENTOS DEL CLÚSTER ==="
-          kubectl get events --sort-by='.metadata.creationTimestamp' | tail -n 20
-          echo "=== LOGS DEL CONTENEDOR (Si existe) ==="
-          kubectl logs deployment/backend-despacho --all-containers=true --tail=100 || echo "No se pudieron obtener los logs (probablemente no arrancó el contenedor)"
+          echo "=== POR QUÉ MYSQL NO ARRANCA ==="
+          kubectl describe pod -l app=mysql
           
       - name: Esperar despliegue de backend-ventas
         run: |
