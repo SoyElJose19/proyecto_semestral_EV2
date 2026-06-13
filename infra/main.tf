@@ -2,7 +2,7 @@ terraform {
   required_providers {
     aws = {
         source  = "hashicorp/aws"
-        # Usamos 6.0 para evitar los conflictos de bloqueo de versiones que tuviste antes
+        # Usamos 6.0 para evitar los conflictos de bloqueo de versiones
         version = "~> 6.0" 
     }
   }
@@ -20,7 +20,11 @@ data "aws_iam_role" "labrole" {
 # ====== 1. REDES ======
 resource "aws_vpc" "eks_vpc" {
   cidr_block = "10.0.0.0/16"
-  tags = { Name = "eks-vpc" }
+  tags = { 
+    Name = "eks-vpc"
+    # Etiqueta opcional pero recomendada para que EKS reconozca la VPC
+    "kubernetes.io/cluster/devops3-cluster" = "shared"
+  }
 }
 
 resource "aws_subnet" "eks_subnet_1" {
@@ -28,7 +32,13 @@ resource "aws_subnet" "eks_subnet_1" {
   cidr_block              = "10.0.10.0/24"
   availability_zone       = "us-east-1a"
   map_public_ip_on_launch = true
-  tags = { Name = "eks-subnet-1" }
+  
+  tags = { 
+    Name = "eks-subnet-1" 
+   
+    "kubernetes.io/role/elb"                = "1"
+    "kubernetes.io/cluster/devops3-cluster" = "owned"
+  }
 }
 
 resource "aws_subnet" "eks_subnet_2" {
@@ -36,7 +46,13 @@ resource "aws_subnet" "eks_subnet_2" {
   cidr_block              = "10.0.20.0/24"
   availability_zone       = "us-east-1b"
   map_public_ip_on_launch = true
-  tags = { Name = "eks-subnet-2" }
+  
+  tags = { 
+    Name = "eks-subnet-2" 
+    
+    "kubernetes.io/role/elb"                = "1"
+    "kubernetes.io/cluster/devops3-cluster" = "owned"
+  }
 }
 
 resource "aws_internet_gateway" "igw" {
