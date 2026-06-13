@@ -32,7 +32,3 @@ spec:
   ports:
     - port: 80
       targetPort: 80
-      #Puerto expuesto en el nodo de kubernet:
-      nodePort: 30080
-  #NodePort: expone el servicio fuera de cluster kubernet:
-  type: NodePort
