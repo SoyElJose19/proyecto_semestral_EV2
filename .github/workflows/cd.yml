@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: us-east-1
-      CLUSTER_NAME: devops-proyect-cluster 
+      CLUSTER_NAME: devops3-cluster
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
