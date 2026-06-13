@@ -42,7 +42,7 @@ jobs:
           docker buildx build \
             --platform linux/amd64 \
             -t $BACKEND_DESPACHOS_ECR:${GITHUB_SHA} \
-            ./backend/back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO \
+            ./backend/back-Des \
             --load
       - name: Push backend-despachos
         run: |
