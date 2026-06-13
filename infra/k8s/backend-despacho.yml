@@ -27,7 +27,7 @@ spec:
             - name: SERVER_PORT
               value: "8081"
             - name: SPRING_DATASOURCE_URL
-              value: "jdbc:mysql://mysql:3306/db_despachos?useSSL=false&allowPublicKeyRetrieval=true"
+              value: "jdbc:mysql://mysql:3306/despachosdb?useSSL=false&allowPublicKeyRetrieval=true"
             - name: SPRING_DATASOURCE_USERNAME
               value: "root"
             - name: SPRING_DATASOURCE_PASSWORD

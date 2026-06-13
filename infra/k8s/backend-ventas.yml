@@ -27,7 +27,7 @@ spec:
             - name: SERVER_PORT
               value: "8082"
             - name: SPRING_DATASOURCE_URL
-              value: "jdbc:mysql://mysql:3306/db_ventas?useSSL=false&allowPublicKeyRetrieval=true"
+              value: "jdbc:mysql://mysql:3306/ventasdb?useSSL=false&allowPublicKeyRetrieval=true"
             - name: SPRING_DATASOURCE_USERNAME
               value: "root"
             - name: SPRING_DATASOURCE_PASSWORD
