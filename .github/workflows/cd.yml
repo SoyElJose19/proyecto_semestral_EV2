@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - develop
+      - main
+      - deploy
   workflow_dispatch:
 
 jobs:
@@ -76,11 +78,15 @@ jobs:
       - name: Configurar Kubeconfig para EKS
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
-         
+          
       - name: Crear o actualizar ConfigMap de inicialización MySQL
         run: |
           kubectl create configmap mysql-init-config --from-file=./mysql-init/init.sql -o yaml --dry-run=client | kubectl apply -f -
           
+      - name: Instalar Metrics Server (Para HPA)
+        run: |
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
       - name: Aplicar los manifiestos de Kubernetes
         run: |
           kubectl apply -f infra/k8s/
@@ -140,3 +146,17 @@ jobs:
           echo ""
           echo " Autoscaling (HPA):"
           kubectl get hpa
+
+      - name: Health Check - Verificar estado de AWS y EKS
+        run: |
+          echo "1. Verificando estado del Clúster EKS en AWS..."
+          aws eks describe-cluster --name ${{ env.CLUSTER_NAME }} --region ${{ env.AWS_REGION }} --query "cluster.status"
+          
+          echo "2. Verificando que los Nodos (EC2) de AWS estén en estado Ready..."
+          kubectl get nodes
+          
+          echo "3. Verificando la asignación de IPs de los Pods en la red de AWS (VPC)..."
+          kubectl get pods -o wide
+          
+          echo "4. Verificando el LoadBalancer público..."
+          kubectl get svc frontend-despacho
