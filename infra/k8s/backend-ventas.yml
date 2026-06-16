@@ -36,9 +36,15 @@ spec:
             - name: SPRING_DATASOURCE_URL
               value: "jdbc:mysql://mysql:3306/ventasdb?useSSL=false&allowPublicKeyRetrieval=true"
             - name: SPRING_DATASOURCE_USERNAME
-              value: "root"
+              valueFrom:
+                secretKeyRef:
+                  name: db-credenciales
+                  key: username
             - name: SPRING_DATASOURCE_PASSWORD
-              value: "root"
+              valueFrom:
+                secretKeyRef:
+                  name: db-credenciales
+                  key: password
 ---
 # Servicio del Backend de Ventas
 apiVersion: v1

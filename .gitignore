@@ -33,3 +33,6 @@ kubeconfig.yaml
 
 # --- Logs ---
 *.log
+
+# Ignorar secretos de Kubernetes
+infra/k8s/secrets.yml
