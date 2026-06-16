@@ -89,8 +89,8 @@ jobs:
       - name: Crear Secreto de Base de Datos en Kubernetes
         run: |
           kubectl create secret generic db-credenciales \
-            --from-literal=username=root \
-            --from-literal=password=${{ secrets.DB_PASSWORD }} \
+            --from-literal=username=${{ secrets.DB_USER }} \
+            --from-literal=password=${{ secrets.DB_PASS }} \
             --dry-run=client -o yaml | kubectl apply -f -
       - name: Aplicar los manifiestos de Kubernetes
         run: |
