@@ -1,7 +1,4 @@
-developname: Despliegue en AWS con EKS (Elastic Kubernetes Service)
-
-on:
-  push:
+push:
     branches:
       - develop
       - main
