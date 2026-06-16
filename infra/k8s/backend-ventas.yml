@@ -1,0 +1,73 @@
+# Despliegue del Backend de Ventas
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-ventas
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend-ventas
+  template:
+    metadata:
+      labels:
+        app: backend-ventas
+    spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.28
+          command: ['sh', '-c', 'until nc -z mysql 3306; do echo waiting for mysql; sleep 2; done;']
+      containers:
+        - name: backend-ventas
+          image: 058264544484.dkr.ecr.us-east-1.amazonaws.com/backend-ventas:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8082
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"  
+          env:
+            - name: SERVER_PORT
+              value: "8082"
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:mysql://mysql:3306/ventasdb?useSSL=false&allowPublicKeyRetrieval=true"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "root"
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: "root"
+---
+# Servicio del Backend de Ventas
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-ventas
+spec:
+  type: ClusterIP
+  selector:
+    app: backend-ventas
+  ports:
+    - port: 8082
+      targetPort: 8082
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-ventas-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend-ventas
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60

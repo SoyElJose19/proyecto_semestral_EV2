@@ -1,73 +1,162 @@
-name: CD - Despliegue Continuo
+name: Despliegue en AWS con EKS (Elastic Kubernetes Service)
 
 on:
   push:
-    branches: [ deploy ]
-
-env:
-  AWS_REGION: us-east-1
-  ECS_CLUSTER: proyecto-semestral-cluster
-  ECS_SERVICE_DESPACHOS: proyecto-semestral-backend-despachos-service
-  ECS_SERVICE_VENTAS: proyecto-semestral-backend-ventas-service
-  ECS_SERVICE_FRONTEND: proyecto-semestral-frontend-service
+    branches:
+      - develop
+      - main
+      - deploy
+  workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+      CLUSTER_NAME: devops3-cluster
     steps:
-      # 1. Checkout
-      - name: Checkout código
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Configurar credenciales AWS (¡Con AWS_SESSION_TOKEN para AWS Academy!)
-      - name: Configurar AWS credentials
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build Ventas Jar
+        run: |
+          cd back-Ventas_SpringBoot
+          mvn clean package -DskipTests
+
+      - name: Build Despachos Jar
+        run: |
+          cd back-Despachos_SpringBoot
+          mvn clean package -DskipTests
+
+      - name: Configurar credenciales de AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }} 
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
-
-      # 3. Login a ECR
-      - name: Login a Amazon ECR
+      
+      - name: Loguear con ECR (Elastic Container Registry)
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+      
+      - name: Rescatar el AWS Account ID
+        run: |
+          echo "ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
 
-      # 4. Build & Push Backend Despachos
+      - name: Definir las URL de los ECR (Usando tus repositorios)
+        run: |
+          echo "BACKEND_DESPACHOS_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/backend-despachos" >> $GITHUB_ENV
+          echo "BACKEND_VENTAS_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/backend-ventas" >> $GITHUB_ENV
+          echo "FRONTEND_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend-despacho" >> $GITHUB_ENV
+
       - name: Build & Push Backend Despachos
-        uses: docker/build-push-action@v5
-        with:
-          context: ./back-Despachos_SpringBoot
-          push: true
-          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-backend-despachos:latest
-          platforms: linux/amd64
+        run: |
+          cd back-Despachos_SpringBoot
+          docker build -t $BACKEND_DESPACHOS_ECR:${{ github.sha }} .
+          docker push $BACKEND_DESPACHOS_ECR:${{ github.sha }}
 
-      # 5. Build & Push Backend Ventas
       - name: Build & Push Backend Ventas
-        uses: docker/build-push-action@v5
-        with:
-          context: ./back-Ventas_SpringBoot
-          push: true
-          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-backend-ventas:latest
-          platforms: linux/amd64
+        run: |
+          cd back-Ventas_SpringBoot
+          docker build -t $BACKEND_VENTAS_ECR:${{ github.sha }} .
+          docker push $BACKEND_VENTAS_ECR:${{ github.sha }}
 
-      # 6. Build & Push Frontend
       - name: Build & Push Frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./front_despacho
-          push: true
-          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/proyecto-semestral-frontend:latest
-          platforms: linux/amd64
-
-      # 7. Forzar nuevo despliegue en ECS
-      - name: Actualizar servicio Backend Despachos
         run: |
-          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_DESPACHOS }} --force-new-deployment
+          cd front_despacho
+          docker build -t $FRONTEND_ECR:${{ github.sha }} .
+          docker push $FRONTEND_ECR:${{ github.sha }}
 
-      - name: Actualizar servicio Backend Ventas
+      - name: Configurar Kubeconfig para EKS
         run: |
-          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_VENTAS }} --force-new-deployment
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+          
+      - name: Crear o actualizar ConfigMap de inicialización MySQL
+        run: |
+          kubectl create configmap mysql-init-config --from-file=./mysql-init/init.sql -o yaml --dry-run=client | kubectl apply -f -
+          
+      - name: Instalar Metrics Server (Para HPA)
+        run: |
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
-      - name: Actualizar servicio Frontend
+      - name: Aplicar los manifiestos de Kubernetes
         run: |
-          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_FRONTEND }} --force-new-deployment
+          kubectl apply -f infra/k8s/
+          
+      - name: Actualizar imágenes en el Clúster de Kubernetes
+        run: |
+          kubectl set image deployment/backend-despacho backend-despacho=$BACKEND_DESPACHOS_ECR:${{ github.sha }}
+          kubectl set image deployment/backend-ventas backend-ventas=$BACKEND_VENTAS_ECR:${{ github.sha }}
+          kubectl set image deployment/frontend-despacho frontend-despacho=$FRONTEND_ECR:${{ github.sha }}
+      
+      - name: Esperar despliegue de backend-despacho
+        run: |
+          kubectl rollout status deployment/backend-despacho --timeout=5m
+          
+      - name: Diagnóstico de Pods (Si falla el despliegue)
+        if: failure()
+        run: |
+          echo "=== ESTADO DE LOS PODS ==="
+          kubectl get pods
+          echo "=== POR QUÉ MYSQL NO ARRANCA ==="
+          kubectl describe pod -l app=mysql
+          
+      - name: Esperar despliegue de backend-ventas
+        run: |
+          kubectl rollout status deployment/backend-ventas --timeout=5m
+          
+      - name: Esperar despliegue de frontend-despacho
+        run: |
+          kubectl rollout status deployment/frontend-despacho --timeout=5m
+
+      - name: Esperar que HPA esté activo
+        run: |
+          echo "Esperando que HPA se active..."
+          sleep 10
+          kubectl get hpa
+
+      - name: Obtener URL del Frontend (LoadBalancer)
+        run: |
+          echo "=== Servicios desplegados ==="
+          kubectl get svc
+          echo ""
+          echo "=== URL del Frontend ==="
+          kubectl get service frontend-despacho -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo "Esperando asignación de LoadBalancer..."
+          echo ""
+
+      - name: Mostrar resumen del despliegue
+        run: |
+          echo "=========================================="
+          echo " DESPLIEGUE COMPLETADO EXITOSAMENTE"
+          echo "=========================================="
+          echo ""
+          echo " Estado de los Pods:"
+          kubectl get pods
+          echo ""
+          echo " Estado de los Servicios:"
+          kubectl get svc
+          echo ""
+          echo " Autoscaling (HPA):"
+          kubectl get hpa
+
+      - name: Health Check - Verificar estado de AWS y EKS
+        run: |
+          echo "1. Verificando estado del Clúster EKS en AWS..."
+          aws eks describe-cluster --name ${{ env.CLUSTER_NAME }} --region ${{ env.AWS_REGION }} --query "cluster.status"
+          
+          echo "2. Verificando que los Nodos (EC2) de AWS estén en estado Ready..."
+          kubectl get nodes
+          
+          echo "3. Verificando la asignación de IPs de los Pods en la red de AWS (VPC)..."
+          kubectl get pods -o wide
+          
+          echo "4. Verificando el LoadBalancer público..."
+          kubectl get svc frontend-despacho

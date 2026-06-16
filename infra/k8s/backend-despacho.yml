@@ -1,0 +1,73 @@
+# Despliegue del Backend de Despachos
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-despacho
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend-despacho
+  template:
+    metadata:
+      labels:
+        app: backend-despacho
+    spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.28
+          command: ['sh', '-c', 'until nc -z mysql 3306; do echo waiting for mysql; sleep 2; done;']
+      containers:
+        - name: backend-despacho
+          image: 058264544484.dkr.ecr.us-east-1.amazonaws.com/backend-despachos:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8081
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          env:
+            - name: SERVER_PORT
+              value: "8081"
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:mysql://mysql:3306/despachosdb?useSSL=false&allowPublicKeyRetrieval=true"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "root"
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: "root"
+---
+# Servicio del Backend de Despachos
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-despacho
+spec:
+  type: ClusterIP
+  selector:
+    app: backend-despacho
+  ports:
+    - port: 8081
+      targetPort: 8081
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-despacho-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend-despacho
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60

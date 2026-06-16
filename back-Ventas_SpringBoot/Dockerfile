@@ -10,7 +10,7 @@ RUN mvn dependency:go-offline
 COPY src ./src
 
 # Compilar sin tests para evitar errores de dependencias de test en el contenedor
-RUN mvn clean package -Dmaven.test.skip=true
+RUN mvn clean package -DskipTests
 
 # Etapa 2: Ejecución (Imagen ligera)
 FROM eclipse-temurin:17-jre-alpine

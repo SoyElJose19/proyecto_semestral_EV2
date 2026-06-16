@@ -1,0 +1,34 @@
+#Despliegue
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-despacho
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-despacho
+  template:
+    metadata:
+      labels:
+        app: frontend-despacho
+    spec:
+      containers:
+        - name: frontend-despacho
+          image: 058264544484.dkr.ecr.us-east-1.amazonaws.com/frontend-despacho:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+---
+#Service:
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-despacho
+spec:
+  type: LoadBalancer
+  selector:
+    app: frontend-despacho
+  ports:
+    - port: 80
+      targetPort: 80
