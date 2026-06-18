@@ -1,56 +1,58 @@
-name: CI - Integración Continua
+name: CI Pipeline - Pruebas y Compilación
 
 on:
+  # Se ejecuta cuando alguien hace un Pull Request hacia la rama develop o main
   pull_request:
-    branches: [develop]
+    branches: [ develop, main ]
+  # Se ejecuta cuando subes código a cualquier rama que empiece con "feature/"
   push:
-    branches: [develop, feature/*]
+    branches: [ feature/* ]
 
 jobs:
+  # --- JOB PARA BACKEND (Maven) ---
   backend-checks:
     strategy:
       matrix:
-        microservice: [back-Despachos_SpringBoot, back-Ventas_SpringBoot]
+        # Prueba ambos microservicios al mismo tiempo
+        microservice: [ back-Despachos_SpringBoot, back-Ventas_SpringBoot ]
     runs-on: ubuntu-latest
     steps:
-      - name: 🔄 Checkout
+      - name: Checkout código
         uses: actions/checkout@v4
 
-      - name: ☕ Setup JDK 17
+      - name: Configurar Java JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: 🧪 Compilar (sin tests ni archivos corruptos)
+      - name: Ejecutar Pruebas Unitarias (Testing)
         run: |
           cd ${{ matrix.microservice }}
-          
-          # Eliminar archivos corruptos que impiden compilación
-          rm -f src/main/resources/application-test.properties
-          rm -rf src/test/
-          
-          # Compilar con Maven
-          mvn clean package -DskipTests -B
+          # Aquí quitamos el skipTests. Ahora Maven ejecutará las pruebas obligatoriamente.
+          mvn clean test -B
         shell: bash
 
+  # --- JOB PARA FRONTEND (Node) ---
   frontend-checks:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: front_despacho
     steps:
-      - name: 🔄 Checkout
+      - name: Checkout código
         uses: actions/checkout@v4
 
-      - name: 🟢 Setup Node 20
+      - name: Configurar Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: front_despacho/package-lock.json
 
-      - name: 📦 Instalar dependencias
-        run: npm install || echo "Sin dependencias npm"
+      - name: Instalar dependencias
+        run: npm ci
 
-      - name: 🏗️ Build
-        run: npm run build 2>/dev/null || echo "Proyecto vanilla JS"
+      - name: Verificar Construcción (Build)
+        run: npm run build
