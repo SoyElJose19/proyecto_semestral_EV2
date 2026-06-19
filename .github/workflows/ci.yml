@@ -3,10 +3,10 @@ name: CI Pipeline - Pruebas y Compilación
 on:
   # Se ejecuta cuando alguien hace un Pull Request hacia la rama develop o main
   pull_request:
-    branches: [ develop, main ]
+    branches: [ deploy, main ]
   # Se ejecuta cuando subes código a cualquier rama que empiece con "feature/"
   push:
-    branches: [ feature/* ]
+    branches: [ feature/*, develop ]
 
 jobs:
   # --- JOB PARA BACKEND (Maven) ---
