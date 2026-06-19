@@ -1,0 +1,58 @@
+name: CI Pipeline - Pruebas y Compilación
+
+on:
+  # Se ejecuta cuando alguien hace un Pull Request hacia la rama develop o main
+  pull_request:
+    branches: [ develop, main ]
+  # Se ejecuta cuando subes código a cualquier rama que empiece con "feature/"
+  push:
+    branches: [ feature/* ]
+
+jobs:
+  # --- JOB PARA BACKEND (Maven) ---
+  backend-checks:
+    strategy:
+      matrix:
+        # Prueba ambos microservicios al mismo tiempo
+        microservice: [ back-Despachos_SpringBoot, back-Ventas_SpringBoot ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Ejecutar Pruebas Unitarias (Testing)
+        run: |
+          cd ${{ matrix.microservice }}
+          # Aquí quitamos el skipTests. Ahora Maven ejecutará las pruebas obligatoriamente.
+          mvn clean test -B
+        shell: bash
+
+  # --- JOB PARA FRONTEND (Node) ---
+  frontend-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front_despacho
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: front_despacho/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar Construcción (Build)
+        run: npm run build

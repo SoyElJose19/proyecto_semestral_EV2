@@ -3,7 +3,6 @@ name: Despliegue en AWS con EKS (Elastic Kubernetes Service)
 on:
   push:
     branches:
-      - develop
       - main
       - deploy
   workflow_dispatch:
