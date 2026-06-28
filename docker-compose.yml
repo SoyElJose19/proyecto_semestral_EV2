@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # 1. Base de Datos MySQL
   mysql_db:
@@ -6,13 +8,11 @@ services:
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
-      # Esta variable crea la base de datos inicial, pero el init.sql creará la otra
       MYSQL_DATABASE: db_ventas 
     ports:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      # IMPORTANTE: Mapeo para creación automática de bases de datos
       - ./mysql-init:/docker-entrypoint-initdb.d
     networks:
       - app-network
@@ -25,7 +25,7 @@ services:
   # 2. Microservicio de Despachos
   backend-despachos:
     build:
-      context: ./back-Despachos_SpringBoot
+      context: ./backend/back-Despachos_SpringBoot
       dockerfile: Dockerfile
     container_name: backend_despachos
     restart: always
@@ -48,7 +48,7 @@ services:
   # 3. Microservicio de Ventas
   backend-ventas:
     build:
-      context: ./back-Ventas_SpringBoot
+      context: ./backend/back-Ventas_SpringBoot
       dockerfile: Dockerfile
     container_name: backend_ventas
     restart: always

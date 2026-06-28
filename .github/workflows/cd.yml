@@ -1,11 +1,10 @@
-name: Despliegue en AWS con EKS (Elastic Kubernetes Service)
+name: Despliegue en AWS con EKS (CD)
 
 on:
   push:
     branches:
-      - develop
-      - main
       - deploy
+      - main
   workflow_dispatch:
 
 jobs:
@@ -18,21 +17,23 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      # MANTENEMOS JDK 17 (Para evitar el error de Lombok que ya arreglamos)
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '17'
           distribution: 'temurin'
           cache: 'maven'
 
+      # RUTAS CORREGIDAS
       - name: Build Ventas Jar
         run: |
-          cd back-Ventas_SpringBoot
+          cd backend/back-Ventas_SpringBoot
           mvn clean package -DskipTests
 
       - name: Build Despachos Jar
         run: |
-          cd back-Despachos_SpringBoot
+          cd backend/back-Despachos_SpringBoot
           mvn clean package -DskipTests
 
       - name: Configurar credenciales de AWS
@@ -43,7 +44,7 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
       
-      - name: Loguear con ECR (Elastic Container Registry)
+      - name: Loguear con ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       
@@ -51,7 +52,7 @@ jobs:
         run: |
           echo "ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
 
-      - name: Definir las URL de los ECR (Usando tus repositorios)
+      - name: Definir las URL de los ECR
         run: |
           echo "BACKEND_DESPACHOS_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/backend-despachos" >> $GITHUB_ENV
           echo "BACKEND_VENTAS_ECR=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/backend-ventas" >> $GITHUB_ENV
@@ -59,109 +60,85 @@ jobs:
 
       - name: Build & Push Backend Despachos
         run: |
-          cd back-Despachos_SpringBoot
+          cd backend/back-Despachos_SpringBoot
           docker build -t $BACKEND_DESPACHOS_ECR:${{ github.sha }} .
           docker push $BACKEND_DESPACHOS_ECR:${{ github.sha }}
+          docker tag $BACKEND_DESPACHOS_ECR:${{ github.sha }} $BACKEND_DESPACHOS_ECR:latest
+          docker push $BACKEND_DESPACHOS_ECR:latest
 
       - name: Build & Push Backend Ventas
         run: |
-          cd back-Ventas_SpringBoot
+          cd backend/back-Ventas_SpringBoot
           docker build -t $BACKEND_VENTAS_ECR:${{ github.sha }} .
           docker push $BACKEND_VENTAS_ECR:${{ github.sha }}
+          docker tag $BACKEND_VENTAS_ECR:${{ github.sha }} $BACKEND_VENTAS_ECR:latest
+          docker push $BACKEND_VENTAS_ECR:latest
 
       - name: Build & Push Frontend
         run: |
           cd front_despacho
           docker build -t $FRONTEND_ECR:${{ github.sha }} .
           docker push $FRONTEND_ECR:${{ github.sha }}
+          docker tag $FRONTEND_ECR:${{ github.sha }} $FRONTEND_ECR:latest
+          docker push $FRONTEND_ECR:latest
+
+      # EL ESCANEO DE SEGURIDAD (Requisito EFT)
+      - name: Escaneo de Vulnerabilidades (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.BACKEND_DESPACHOS_ECR }}:latest'
+          format: 'table'
+          exit-code: '0' 
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
 
       - name: Configurar Kubeconfig para EKS
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
           
-      - name: Crear o actualizar ConfigMap de inicialización MySQL
+      - name: Crear o actualizar ConfigMap MySQL
         run: |
           kubectl create configmap mysql-init-config --from-file=./mysql-init/init.sql -o yaml --dry-run=client | kubectl apply -f -
           
       - name: Instalar Metrics Server (Para HPA)
         run: |
           kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-      - name: Crear Secreto de Base de Datos en Kubernetes
+          
+      - name: Crear Secreto de Base de Datos
         run: |
           kubectl create secret generic db-credenciales \
             --from-literal=username=${{ secrets.DB_USER }} \
             --from-literal=password=${{ secrets.DB_PASS }} \
             --dry-run=client -o yaml | kubectl apply -f -
-      - name: Aplicar los manifiestos de Kubernetes
+            
+      - name: Aplicar manifiestos
         run: |
           kubectl apply -f infra/k8s/
           
-      - name: Actualizar imágenes en el Clúster de Kubernetes
+      - name: Actualizar imágenes en el Clúster
         run: |
           kubectl set image deployment/backend-despacho backend-despacho=$BACKEND_DESPACHOS_ECR:${{ github.sha }}
           kubectl set image deployment/backend-ventas backend-ventas=$BACKEND_VENTAS_ECR:${{ github.sha }}
           kubectl set image deployment/frontend-despacho frontend-despacho=$FRONTEND_ECR:${{ github.sha }}
       
-      - name: Esperar despliegue de backend-despacho
+      - name: Esperar despliegues
         run: |
           kubectl rollout status deployment/backend-despacho --timeout=5m
-          
-      - name: Diagnóstico de Pods (Si falla el despliegue)
+          kubectl rollout status deployment/backend-ventas --timeout=5m
+          kubectl rollout status deployment/frontend-despacho --timeout=5m
+
+      - name: Diagnóstico de Pods (Si falla)
         if: failure()
         run: |
           echo "=== ESTADO DE LOS PODS ==="
           kubectl get pods
-          echo "=== POR QUÉ MYSQL NO ARRANCA ==="
-          kubectl describe pod -l app=mysql
           
-      - name: Esperar despliegue de backend-ventas
-        run: |
-          kubectl rollout status deployment/backend-ventas --timeout=5m
-          
-      - name: Esperar despliegue de frontend-despacho
-        run: |
-          kubectl rollout status deployment/frontend-despacho --timeout=5m
-
-      - name: Esperar que HPA esté activo
-        run: |
-          echo "Esperando que HPA se active..."
-          sleep 10
-          kubectl get hpa
-
-      - name: Obtener URL del Frontend (LoadBalancer)
-        run: |
-          echo "=== Servicios desplegados ==="
-          kubectl get svc
-          echo ""
-          echo "=== URL del Frontend ==="
-          kubectl get service frontend-despacho -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo "Esperando asignación de LoadBalancer..."
-          echo ""
-
-      - name: Mostrar resumen del despliegue
+      - name: Mostrar resumen final
         run: |
           echo "=========================================="
           echo " DESPLIEGUE COMPLETADO EXITOSAMENTE"
           echo "=========================================="
-          echo ""
-          echo " Estado de los Pods:"
           kubectl get pods
-          echo ""
-          echo " Estado de los Servicios:"
           kubectl get svc
-          echo ""
-          echo " Autoscaling (HPA):"
           kubectl get hpa
-
-      - name: Health Check - Verificar estado de AWS y EKS
-        run: |
-          echo "1. Verificando estado del Clúster EKS en AWS..."
-          aws eks describe-cluster --name ${{ env.CLUSTER_NAME }} --region ${{ env.AWS_REGION }} --query "cluster.status"
-          
-          echo "2. Verificando que los Nodos (EC2) de AWS estén en estado Ready..."
-          kubectl get nodes
-          
-          echo "3. Verificando la asignación de IPs de los Pods en la red de AWS (VPC)..."
-          kubectl get pods -o wide
-          
-          echo "4. Verificando el LoadBalancer público..."
-          kubectl get svc frontend-despacho
