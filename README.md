@@ -1,64 +1,42 @@
-Proyecto Semestral: Sistema de Gestión de Ventas y Despachos (DevOps & EKS)
-📋 Descripción del Proyecto
-Este proyecto implementa una arquitectura de microservicios distribuida en AWS EKS, integrando el backend (Spring Boot), frontend (React) y persistencia (MySQL). La solución se basa en principios DevOps, logrando una infraestructura inmutable y un despliegue totalmente automatizado.
+Markdown
+# Sistema de Gestión de Ventas y Despachos (DevOps CI/CD)
 
-🏗️ Arquitectura del Sistema
-El despliegue se basa en una VPC con subredes privadas y públicas, garantizando que los microservicios residan en una red aislada, expuestos únicamente a través de un LoadBalancer configurado en Kubernetes.
+Proyecto final para la asignatura Introducción a Herramientas DevOps. Implementación de una arquitectura de microservicios automatizada en AWS, utilizando Infraestructura como Código (IaC) y un pipeline CI/CD completo.
 
-(Aquí se ilustra el flujo desde el CI/CD hasta la orquestación en el clúster EKS)
+## 1. Arquitectura del Sistema
+El despliegue separa la lógica de negocio en subredes privadas, exponiendo únicamente el Frontend a través de un balanceador de carga público para garantizar la seguridad.
 
-🛠️ Desafíos Técnicos Resueltos
-Durante el desarrollo se superaron hitos críticos que garantizan la estabilidad del sistema:
+![Diagrama de Arquitectura Final](DiagramaTecnico.drawio.png)
 
-Resolución de IAM (Error 403): Se omitió el uso del módulo aws_iam_session_context para evitar restricciones de denegación explícita en AWS Academy, optando por el uso de recursos directos (aws_eks_cluster).
+## 2. Tecnologías Utilizadas
+* **Contenedores:** Docker (Dockerfiles multietapa, Alpine).
+* **CI/CD:** GitHub Actions.
+* **Infraestructura Cloud:** AWS (VPC, ECR, LoadBalancers, Orquestación de contenedores).
+* **Seguridad:** Trivy (Escaneo de vulnerabilidades).
+* **Aplicaciones:** Spring Boot (Backends), React (Frontend), MySQL (Base de datos).
 
-Gestión del ciclo de vida ECR: Implementación de force_delete = true en los repositorios de imágenes para asegurar la limpieza total durante el proceso de terraform destroy.
+## 3. Entorno de Desarrollo Local (Levantamiento)
+Para levantar el proyecto en un entorno de desarrollo local, utilizamos `docker-compose`. Este orquesta las redes internas y volúmenes necesarios.
 
-Inicialización de Base de Datos: Uso de init.sql para el despliegue automático del esquema de MySQL, asegurando que el backend cuente con la estructura necesaria desde el primer arranque.
 
-🚀 Guía de Despliegue
-1. Infraestructura como Código (Terraform)
-Gestión de la infraestructura desde infra/terraform/:
+# Construir imágenes y levantar contenedores en segundo plano
+docker-compose up -d --build
 
-Bash
-cd infra/terraform
-terraform init
-terraform plan
-terraform apply -auto-approve
-2. Orquestación (Kubernetes)
-Configuración del contexto del clúster y despliegue de servicios:
+# Verificar el estado de los servicios
+docker-compose ps
 
-Bash
-# Conectar localmente al clúster recién creado
-aws eks update-kubeconfig --region us-east-1 --name devops-proyect-cluster
+## 4. Pipeline CI/CD (Testing, Build, Deploy)
+El ciclo de vida de la aplicación está 100% automatizado mediante GitHub Actions. Al realizar un push a la rama de despliegue, el pipeline ejecuta:
 
-# Desplegar manifiestos de microservicios
-kubectl apply -f infra/k8s/
-3. Ciclo de CI/CD (Pipeline)
-El pipeline automatizado en GitHub Actions (.github/workflows/cd.yml) realiza:
+Testing de Infraestructura/Seguridad: Escaneo de las imágenes generadas utilizando Trivy para detectar vulnerabilidades Críticas/Altas.
 
-Build: Compilación de microservicios.
+Build: Compilación del código (Maven/Node) y construcción de las imágenes Docker.
 
-Push: Construcción de imágenes Docker y subida a ECR.
+Push: Almacenamiento seguro de las imágenes en Amazon ECR.
 
-Deploy: Aplicación de despliegues en el clúster EKS.
+Deploy: Actualización automática de los servicios en la nube de AWS, aplicando estrategias de rolling update para cero tiempo de inactividad.
 
-📊 Métricas de Rendimiento (Evaluación Transversal)
-Tiempo de despliegue (Pipeline): ~5 minutos (optimizado mediante caché de capas en Docker).
+## 5. Autores
+Jose Espinosa
 
-Autoescalado: Implementado mediante HPA, permitiendo una respuesta de escalado ante picos de carga en menos de 90 segundos.
-
-Disponibilidad: Alta disponibilidad asegurada mediante el despliegue multi-zona en EKS.
-
-🧹 Limpieza (Destrucción)
-Para liberar los recursos en AWS de forma limpia y evitar bloqueos:
-
-Bash
-# 1. Eliminar objetos de Kubernetes
-kubectl delete -f infra/k8s/
-
-# 2. Destruir infraestructura de Terraform
-cd infra/terraform
-terraform destroy -auto-approve
-Autores: Jose Espinosa | Vicente Garrido
-Asignatura: Proyecto de DevOps | Duoc UC
+Vicente Garrido
